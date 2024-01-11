@@ -7,7 +7,7 @@ db_config = {
     'dbname': 'postgres',
     'user': 'admin',
     'password': 'adminadmin',
-    'host': 'localhost',
+    'host': '172.17.0.3',
     'port': '5432'
 }
 
@@ -28,15 +28,48 @@ def get_films():
 
 @app.route('/films', methods=['POST'])
 def add_film():
-    data = request.get_json()
-    movie_name = data.get('name')
-    movie_description = data.get('description')
+    try:
+        data = request.get_json()
 
-    return jsonify({"message": "Film added successfully"})
+        if not data or 'title' not in data or 'description' not in data:
+            return jsonify({"error": "Invalid request data"}), 400
+
+        title = data['title']
+        description = data['description']
+        language_id = data.get('language_id', 1)
+
+        conn = psycopg2.connect(**db_config)
+        cursor = conn.cursor()
+
+        cursor.execute("INSERT INTO film (title, description, language_id) VALUES (%s, %s, %s) RETURNING film_id", (title, description, language_id))
+        new_film_id = cursor.fetchone()[0]
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return jsonify({"message": "Film added successfully", "film_id": new_film_id})
+
+    except psycopg2.Error as e:
+        return jsonify({"error": f"Database error: {e}"}), 500
 
 @app.route('/films/<film_id>', methods=['GET'])
 def get_film(film_id):
-    return jsonify({"film": {}})
+    try:
+        conn = psycopg2.connect(**db_config)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM film WHERE film_id = %s", (film_id,))
+        film = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        if film:
+            return jsonify({"film": {"id": film[0], "name": film[1], "description": film[2]}})
+        else:
+            return jsonify({"error": "Film not found"}), 404
+
+    except psycopg2.Error as e:
+        return jsonify({"error": f"Database error: {e}"}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=80)
+    app.run(debug=True, port=8080, host="0.0.0.0")
